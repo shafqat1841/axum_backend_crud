@@ -1,0 +1,145 @@
+use std::{fmt::format, sync::Arc};
+
+use axum::{
+    Extension, Json, Router,
+    extract::Path,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{delete, get, post, put},
+};
+use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
+
+#[derive(Deserialize, Serialize)]
+struct Person {
+    id: u32,
+    name: String,
+    age: u32,
+}
+
+impl Person {
+    fn new(id: u32, name: String, age: u32) -> Self {
+        Person { id, name, age }
+    }
+}
+
+type ShareState = Arc<Mutex<Vec<Person>>>;
+
+type ShareStateExt = Extension<ShareState>;
+
+fn create_shared_state() -> ShareState {
+    let person_list: Vec<Person> = Vec::new();
+    let shared_state = Arc::new(Mutex::new(person_list));
+    shared_state
+}
+
+fn crud_router() -> Router {
+    let shared_state = create_shared_state();
+    let router = Router::new();
+    let api = router
+        .route("/list", get(get_persons))
+        .route("/list/{id}", get(get_person))
+        .route("/add_list", post(create_person))
+        .route("/update_list", put(update_person))
+        .route("/delete_list", delete(delete_person))
+        .layer(Extension(shared_state));
+    api
+}
+
+pub fn create_routes() -> axum::Router {
+    let router = Router::new();
+    let crud_api = crud_router();
+    let app_api = router.route("/", get(home)).nest("/api", crud_api);
+    app_api
+}
+
+async fn home() -> &'static str {
+    "hello world"
+}
+
+async fn get_persons(Extension(shared_state): ShareStateExt) -> impl IntoResponse {
+    let person_list = shared_state.lock().await;
+    if person_list.is_empty() {
+        let res = format!("no data found");
+        return (StatusCode::NOT_FOUND, res).into_response();
+    }
+
+    let res = serde_json::to_string(&*person_list)
+        .unwrap_or_else(|_| "Failed to serialize person list".to_string());
+
+    (StatusCode::OK, res).into_response()
+}
+
+async fn get_person(
+    Extension(shared_state): ShareStateExt,
+    Path(id): Path<u32>,
+) -> impl IntoResponse {
+    let person_list = shared_state.lock().await;
+    if person_list.is_empty() {
+        let res = format!("no data found");
+        return (StatusCode::NOT_FOUND, res).into_response();
+    }
+
+    let person = person_list.iter().find(|p| p.id == id);
+    if let Some(person) = person {
+        let res = serde_json::to_string(person)
+            .unwrap_or_else(|_| "Failed to serialize person".to_string());
+        (StatusCode::OK, res).into_response()
+    } else {
+        let res = format!("person with id {} not found", id);
+        (StatusCode::NOT_FOUND, res).into_response()
+    }
+}
+
+async fn create_person(
+    Extension(shared_state): ShareStateExt,
+    Json(person): Json<Person>,
+) -> impl IntoResponse {
+    let mut person_list = shared_state.lock().await;
+    let id = person_list.len() as u32 + 1;
+    let person_data = Person::new(id, person.name.clone(), person.age);
+    person_list.push(person_data);
+    let res = format!("person added");
+    (StatusCode::OK, res).into_response()
+}
+
+async fn update_person(
+    Extension(shared_state): ShareStateExt,
+    Path(id): Path<u32>,
+    Json(person): Json<Person>,
+) -> impl IntoResponse {
+    let mut person_list = shared_state.lock().await;
+
+    let person_exists = person_list.iter().any(|p| p.id == id);
+
+    if !person_exists {
+        let res = format!("person with id {} not found", id);
+        return (StatusCode::NOT_FOUND, res).into_response();
+    }
+
+    person_list.iter_mut().for_each(|p| {
+        if p.id == id {
+            p.name = person.name.clone();
+            p.age = person.age;
+        }
+    });
+    let res = format!("person with id {} updated", id);
+    (StatusCode::OK, res).into_response()
+}
+
+async fn delete_person(
+    Extension(shared_state): ShareStateExt,
+    Path(id): Path<u32>,
+) -> impl IntoResponse {
+    let mut person_list = shared_state.lock().await;
+    let person_exists = person_list.iter().any(|p| p.id == id);
+
+    if !person_exists {
+        let res = format!("person with id {} not found", id);
+        return (StatusCode::NOT_FOUND, res).into_response();
+    }
+
+    person_list.retain(|p| p.id != id);
+    let res = format!("person with id {} deleted", id);
+    (StatusCode::OK, res).into_response()
+}
