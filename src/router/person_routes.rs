@@ -10,15 +10,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-#[derive(Deserialize, Serialize, Debug)]
-struct Person {
-    id: u32,
-    name: String,
-    age: u32,
-}
 
 #[derive(Deserialize, Serialize, Debug)]
-struct CreatePersonReq {
+pub struct Person {
+    id: u32,
     name: String,
     age: u32,
 }
@@ -29,9 +24,21 @@ impl Person {
     }
 }
 
-type ShareState = Arc<Mutex<Vec<Person>>>;
+pub type ShareState = Arc<Mutex<Vec<Person>>>;
 
-type ShareStateExt = Extension<ShareState>;
+pub type ShareStateExt = Extension<ShareState>;
+
+#[derive(Deserialize, Serialize, Debug)]
+struct CreatePersonReq {
+    name: String,
+    age: u32,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct UpdatePersonReq {
+    name: String,
+    age: u32,
+}
 
 fn create_shared_state() -> ShareState {
     let person_list: Vec<Person> = Vec::new();
@@ -39,8 +46,8 @@ fn create_shared_state() -> ShareState {
     shared_state
 }
 
-fn crud_router() -> Router {
-    let shared_state = create_shared_state();
+pub fn person_router() -> Router {
+        let shared_state = create_shared_state();
     let router = Router::new();
     let api = router
         .route("/get_persons", get(get_persons))
@@ -50,17 +57,6 @@ fn crud_router() -> Router {
         .route("/delete_person/{id}", delete(delete_person))
         .layer(Extension(shared_state));
     api
-}
-
-pub fn create_routes() -> axum::Router {
-    let router = Router::new();
-    let crud_api = crud_router();
-    let app_api = router.route("/", get(home)).nest("/api", crud_api);
-    app_api
-}
-
-async fn home() -> &'static str {
-    "hello world"
 }
 
 async fn get_persons(Extension(shared_state): ShareStateExt) -> impl IntoResponse {
@@ -96,9 +92,15 @@ async fn get_person(
 
     let person = person_list.iter().find(|p| p.id == id);
     if let Some(person) = person {
-        let res = serde_json::to_string(person)
-            .unwrap_or_else(|_| "Failed to serialize person".to_string());
-        (StatusCode::OK, res).into_response()
+        let person_data = serde_json::to_string_pretty(person);
+        match person_data {
+            Ok(json) => (StatusCode::OK, json).into_response(),
+            Err(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to serialize person",
+            )
+                .into_response(),
+        }
     } else {
         let res = format!("person with id {} not found", id);
         (StatusCode::NOT_FOUND, res).into_response()
@@ -120,7 +122,7 @@ async fn create_person(
 async fn update_person(
     Extension(shared_state): ShareStateExt,
     Path(id): Path<u32>,
-    Json(person): Json<Person>,
+    Json(person): Json<UpdatePersonReq>,
 ) -> impl IntoResponse {
     let mut person_list = shared_state.lock().await;
 
