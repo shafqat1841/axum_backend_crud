@@ -1,4 +1,4 @@
-use std::{fmt::format, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     Extension, Json, Router,
@@ -10,9 +10,15 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 struct Person {
     id: u32,
+    name: String,
+    age: u32,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct CreatePersonReq {
     name: String,
     age: u32,
 }
@@ -37,11 +43,11 @@ fn crud_router() -> Router {
     let shared_state = create_shared_state();
     let router = Router::new();
     let api = router
-        .route("/list", get(get_persons))
-        .route("/list/{id}", get(get_person))
-        .route("/add_list", post(create_person))
-        .route("/update_list", put(update_person))
-        .route("/delete_list", delete(delete_person))
+        .route("/get_persons", get(get_persons))
+        .route("/get_person/{id}", get(get_person))
+        .route("/create_person", post(create_person))
+        .route("/update_person/{id}", put(update_person))
+        .route("/delete_person/{id}", delete(delete_person))
         .layer(Extension(shared_state));
     api
 }
@@ -64,10 +70,18 @@ async fn get_persons(Extension(shared_state): ShareStateExt) -> impl IntoRespons
         return (StatusCode::NOT_FOUND, res).into_response();
     }
 
-    let res = serde_json::to_string(&*person_list)
-        .unwrap_or_else(|_| "Failed to serialize person list".to_string());
+    let all_persons = serde_json::to_vec_pretty(&*person_list);
 
-    (StatusCode::OK, res).into_response()
+    let res = match all_persons {
+        Ok(json) => (StatusCode::OK, json).into_response(),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to serialize persons",
+        )
+            .into_response(),
+    };
+
+    res
 }
 
 async fn get_person(
@@ -93,11 +107,11 @@ async fn get_person(
 
 async fn create_person(
     Extension(shared_state): ShareStateExt,
-    Json(person): Json<Person>,
+    Json(person): Json<CreatePersonReq>,
 ) -> impl IntoResponse {
     let mut person_list = shared_state.lock().await;
     let id = person_list.len() as u32 + 1;
-    let person_data = Person::new(id, person.name.clone(), person.age);
+    let person_data = Person::new(id, person.name, person.age);
     person_list.push(person_data);
     let res = format!("person added");
     (StatusCode::OK, res).into_response()
