@@ -1,1 +1,1 @@
-mod person_db;
+pub mod person_db;
