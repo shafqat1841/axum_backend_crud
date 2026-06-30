@@ -10,6 +10,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+use crate::{database::person_db::PersonModelExt, errors::HttpError};
+
+use crate::AppState;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Person {
@@ -40,33 +43,28 @@ struct UpdatePersonReq {
     age: u32,
 }
 
-fn create_shared_state() -> ShareState {
-    let person_list: Vec<Person> = Vec::new();
-    let shared_state = Arc::new(Mutex::new(person_list));
-    shared_state
-}
-
 pub fn person_router() -> Router {
-        let shared_state = create_shared_state();
     let router = Router::new();
     let api = router
         .route("/get_persons", get(get_persons))
         .route("/get_person/{id}", get(get_person))
         .route("/create_person", post(create_person))
         .route("/update_person/{id}", put(update_person))
-        .route("/delete_person/{id}", delete(delete_person))
-        .layer(Extension(shared_state));
+        .route("/delete_person/{id}", delete(delete_person));
     api
 }
 
-async fn get_persons(Extension(shared_state): ShareStateExt) -> impl IntoResponse {
-    let person_list = shared_state.lock().await;
-    if person_list.is_empty() {
-        let res = format!("no data found");
-        return (StatusCode::NOT_FOUND, res).into_response();
-    }
+async fn get_persons(
+    Extension(app_state): Extension<Arc<AppState>>,
+) -> Result<impl IntoResponse, HttpError> {
+    let persons_list = app_state
+        .db_client
+        .get_persons()
+        .await
+        .map_err(|e| HttpError::server_error(e.to_string()))?;
 
-    let all_persons = serde_json::to_vec_pretty(&*person_list);
+
+    let all_persons = serde_json::to_vec_pretty(&*persons_list);
 
     let res = match all_persons {
         Ok(json) => (StatusCode::OK, json).into_response(),
@@ -77,7 +75,7 @@ async fn get_persons(Extension(shared_state): ShareStateExt) -> impl IntoRespons
             .into_response(),
     };
 
-    res
+    Ok(res)
 }
 
 async fn get_person(
