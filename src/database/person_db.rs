@@ -4,12 +4,12 @@ use crate::{db::DBClient, models::PersonModel};
 
 #[async_trait]
 pub trait PersonModelExt {
-    async fn get_persons(&self) -> Result<Option<Vec<PersonModel>>, sqlx::Error>;
+    async fn get_persons(&self) -> Result<Vec<PersonModel>, sqlx::Error>;
 }
 
 #[async_trait]
 impl PersonModelExt for DBClient {
-    async fn get_persons(&self) -> Result<Option<Vec<PersonModel>>, sqlx::Error> {
+    async fn get_persons(&self) -> Result<Vec<PersonModel>, sqlx::Error> {
         let query = r#"
         SELECT  
                  id, 
@@ -24,6 +24,6 @@ impl PersonModelExt for DBClient {
             .fetch_all(&self.pool)
             .await?;
 
-        Ok(Some(user))
+        Ok(user)
     }
 }
