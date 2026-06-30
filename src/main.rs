@@ -3,6 +3,7 @@ mod database;
 mod db;
 mod models;
 mod router;
+mod errors;
 
 use std::sync::Arc;
 
@@ -22,7 +23,7 @@ async fn main() {
 
     let pool = match PgPoolOptions::new()
         .max_connections(10)
-        .connect(&config.database_url)
+        .connect(&config.database_url.clone())
         .await
     {
         Ok(pool) => {
@@ -42,7 +43,7 @@ async fn main() {
     };
 
     // build our application with a single route
-    let app_api = router::create_routes(Arc::new(app_state.clone()));
+    let app_api = router::create_routes(Arc::new(app_state));
 
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
