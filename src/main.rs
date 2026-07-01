@@ -1,12 +1,15 @@
 mod config;
 mod database;
 mod db;
+mod errors;
 mod models;
 mod router;
-mod errors;
+mod dtos;
+mod handlers;
 
 use std::sync::Arc;
 
+use dotenv::dotenv;
 use sqlx::postgres::PgPoolOptions;
 
 use crate::{config::Config, db::DBClient};
@@ -19,6 +22,8 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
+
     let config = Config::init();
 
     let pool = match PgPoolOptions::new()
