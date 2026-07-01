@@ -1,2 +1,1 @@
-mod persons_model;
-pub use persons_model::PersonModel;
+pub mod persons_model;
