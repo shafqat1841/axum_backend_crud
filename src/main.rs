@@ -1,13 +1,16 @@
 mod config;
 mod database;
 mod db;
+mod dtos;
 mod errors;
+mod handlers;
 mod models;
 mod router;
-mod dtos;
-mod handlers;
+mod utils;
 
 use std::sync::Arc;
+use axum::http::{HeaderValue, Method, header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE}};
+use tower_http::cors::CorsLayer;
 
 use dotenv::dotenv;
 use sqlx::postgres::PgPoolOptions;
@@ -41,6 +44,12 @@ async fn main() {
         }
     };
 
+    let cors = CorsLayer::new()
+        .allow_origin("https://localhost:3000".parse::<HeaderValue>().unwrap())
+        .allow_headers([AUTHORIZATION, ACCEPT, CONTENT_TYPE])
+        .allow_credentials(true)
+        .allow_methods([Method::GET, Method::POST, Method::PUT]);
+
     let db_client = DBClient::new(pool);
     let app_state = AppState {
         env: config.clone(),
@@ -48,7 +57,7 @@ async fn main() {
     };
 
     // build our application with a single route
-    let app_api = router::create_routes(Arc::new(app_state));
+    let app_api = router::create_routes(Arc::new(app_state)).layer(cors);
 
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
